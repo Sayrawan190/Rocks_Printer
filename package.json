@@ -1,0 +1,26 @@
+{
+  "name": "print-hub",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Shared 3D printer management dashboard",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js",
+    "dev:client": "cd client && npm run dev",
+    "build": "cd client && npm install && npm run build",
+    "db:init": "psql \"$DATABASE_URL\" -f database/schema.sql && psql \"$DATABASE_URL\" -f database/seed.sql"
+  },
+  "dependencies": {
+    "bcryptjs": "^3.0.2",
+    "connect-pg-simple": "^10.0.0",
+    "dotenv": "^17.2.1",
+    "express": "^5.1.0",
+    "express-session": "^1.18.2",
+    "helmet": "^8.1.0",
+    "pg": "^8.16.3"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
