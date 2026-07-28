@@ -45,7 +45,7 @@ export default function History() {
         <FilterSelect value={result} onChange={setResult} list={['Completed', 'Failed', 'Canceled']} allLabel={t('allResults')} labelFor={(v) => t(v.toLowerCase())} />
         <input type="date" style={{ width: 'auto' }} value={date} onChange={(e) => setDate(e.target.value)} />
       </div>
-      <HistoryTable items={filtered} />
+      <HistoryTable items={filtered} onDone={load} />
     </>
   );
 }

@@ -376,7 +376,8 @@ app.post('/api/current/finish', auth, adminOnly, asyncRoute(async (req, res) => 
     if (!active) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'No active print' }); }
     const spool = active.filament_id ? (await client.query('SELECT * FROM filaments WHERE id=$1 FOR UPDATE', [active.filament_id])).rows[0] : null;
     if (spool && Number(spool.remaining_grams) < grams) { await client.query('ROLLBACK'); return res.status(400).json({ error: 'Consumed grams exceed remaining filament' }); }
-    const elapsed = Math.max(0, Math.round((Date.now() - new Date(active.started_at).getTime()) / 60000));
+    const elapsedReal = Math.max(0, Math.round((Date.now() - new Date(active.started_at).getTime()) / 60000));
+    const elapsed = Math.min(elapsedReal, active.duration_minutes);
     const history = await client.query(`INSERT INTO print_history(queue_id,product_name,owner_id,filament_id,filament_name,
       filament_color,grams,result,duration_minutes,started_at,model_link,image_url,note,started_by,finished_by)
       VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15) RETURNING id`,
@@ -492,6 +493,69 @@ app.get('/api/filaments/:id/logs', auth, asyncRoute(async (req, res) => {
 app.get('/api/history', auth, asyncRoute(async (_req, res) => {
   const { rows } = await db.query(`${historySelect} ORDER BY h.finished_at DESC`);
   res.json(rows);
+}));
+
+async function verifyPassword(userId, password) {
+  const { rows } = await db.query('SELECT password_hash FROM users WHERE id=$1', [userId]);
+  return Boolean(rows[0] && await bcrypt.compare(String(password || ''), rows[0].password_hash));
+}
+
+app.put('/api/history/:id', auth, asyncRoute(async (req, res) => {
+  const record = (await db.query('SELECT * FROM print_history WHERE id=$1', [req.params.id])).rows[0];
+  if (!record) return res.status(404).json({ error: 'History record not found' });
+  const user = await currentUser(req.session.userId);
+  if (!user.is_admin && record.owner_id !== user.id) return res.status(403).json({ error: 'You cannot edit this record' });
+  if (!await verifyPassword(user.id, req.body.password)) return res.status(401).json({ error: 'Incorrect password' });
+  const grams = validNumber(req.body.grams ?? record.grams, 0);
+  const duration = validNumber(req.body.durationMinutes ?? record.duration_minutes, 0);
+  const result = ['Completed', 'Failed', 'Canceled'].includes(req.body.result) ? req.body.result : record.result;
+  if (grams === null || duration === null) return res.status(400).json({ error: 'Invalid grams or duration' });
+  const note = req.body.note ?? record.note;
+  const client = await db.getClient();
+  try {
+    await client.query('BEGIN');
+    if (record.filament_id) {
+      const delta = Number(record.grams) - grams;
+      if (delta !== 0) {
+        const spool = (await client.query('SELECT * FROM filaments WHERE id=$1 FOR UPDATE', [record.filament_id])).rows[0];
+        if (spool) {
+          const newRemaining = Number(spool.remaining_grams) + delta;
+          if (newRemaining < 0 || newRemaining > Number(spool.total_grams)) {
+            await client.query('ROLLBACK');
+            return res.status(400).json({ error: 'Grams change exceeds filament stock' });
+          }
+          await client.query('UPDATE filaments SET remaining_grams=$1 WHERE id=$2', [newRemaining, spool.id]);
+        }
+      }
+    }
+    await client.query(`UPDATE print_history SET product_name=$1,grams=$2,result=$3,duration_minutes=$4,note=$5 WHERE id=$6`,
+      [req.body.productName?.trim() || record.product_name, grams, result, Math.round(duration), note, record.id]);
+    await client.query('UPDATE filament_logs SET grams=$1,result=$2,note=$3 WHERE history_id=$4', [grams, result, note, record.id]);
+    await client.query('COMMIT');
+    res.json({ ok: true });
+  } catch (error) { await client.query('ROLLBACK'); throw error; } finally { client.release(); }
+}));
+
+app.delete('/api/history/:id', auth, asyncRoute(async (req, res) => {
+  const record = (await db.query('SELECT * FROM print_history WHERE id=$1', [req.params.id])).rows[0];
+  if (!record) return res.status(404).json({ error: 'History record not found' });
+  const user = await currentUser(req.session.userId);
+  if (!user.is_admin && record.owner_id !== user.id) return res.status(403).json({ error: 'You cannot delete this record' });
+  if (!await verifyPassword(user.id, req.body.password)) return res.status(401).json({ error: 'Incorrect password' });
+  const client = await db.getClient();
+  try {
+    await client.query('BEGIN');
+    if (record.filament_id && Number(record.grams) > 0) {
+      const spool = (await client.query('SELECT * FROM filaments WHERE id=$1 FOR UPDATE', [record.filament_id])).rows[0];
+      if (spool) {
+        const restored = Math.min(Number(spool.total_grams), Number(spool.remaining_grams) + Number(record.grams));
+        await client.query('UPDATE filaments SET remaining_grams=$1 WHERE id=$2', [restored, spool.id]);
+      }
+    }
+    await client.query('DELETE FROM print_history WHERE id=$1', [record.id]);
+    await client.query('COMMIT');
+    res.json({ ok: true });
+  } catch (error) { await client.query('ROLLBACK'); throw error; } finally { client.release(); }
 }));
 
 app.get('/api/notifications', auth, asyncRoute(async (req, res) => {

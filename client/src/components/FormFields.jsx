@@ -27,12 +27,12 @@ export function SelectField({ label, name, children, full = false, ...rest }) {
   );
 }
 
-export function FormButtons({ onClose }) {
+export function FormButtons({ onClose, submitLabel, danger = false }) {
   const { t } = useApp();
   return (
     <div className="form-actions">
       <button className="btn secondary" type="button" onClick={onClose}>{t('close')}</button>
-      <button className="btn primary" type="submit">{t('save')}</button>
+      <button className={`btn ${danger ? 'danger' : 'primary'}`} type="submit">{submitLabel || t('save')}</button>
     </div>
   );
 }
