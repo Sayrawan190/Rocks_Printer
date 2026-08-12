@@ -14,6 +14,8 @@ if (!process.env.DATABASE_URL) {
 }
 
 const app = express();
+app.set('trust proxy', 1);
+
 const PORT = Number(process.env.PORT) || 3000;
 const PUBLIC_DIR = path.join(__dirname, 'public');
 const asyncRoute = (fn) => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
