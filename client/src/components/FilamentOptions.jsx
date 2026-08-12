@@ -1,9 +1,10 @@
 import { useApp } from '../AppContext.jsx';
 import { fmtNum } from '../i18n.js';
 
-export default function FilamentOptions({ ownOnly = false }) {
+export default function FilamentOptions({ ownOnly = false, ownerId = null }) {
   const { t, me, filaments, language } = useApp();
-  const list = ownOnly ? filaments.filter((f) => f.owners.map(Number).includes(me.id)) : filaments;
+  const targetId = ownerId ?? me.id;
+  const list = ownOnly ? filaments.filter((f) => f.owners.map(Number).includes(Number(targetId))) : filaments;
   return (
     <>
       <option value="">{t('selectFilament')}</option>

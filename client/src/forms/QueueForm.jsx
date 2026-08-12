@@ -1,11 +1,14 @@
+import { useState } from 'react';
 import { useApp } from '../AppContext.jsx';
 import { api } from '../api.js';
 import { Field, TextAreaField, SelectField, FormButtons } from '../components/FormFields.jsx';
 import FilamentOptions from '../components/FilamentOptions.jsx';
 
 export default function QueueForm({ item = null, start = false, onDone }) {
-  const { t, closeModal, toast, navigate, loadNotifications } = useApp();
+  const { t, me, users, closeModal, toast, navigate, loadNotifications } = useApp();
   const own = !start;
+  const canAssign = me.is_admin && !item && !start;
+  const [ownerId, setOwnerId] = useState(item?.owner_id ?? me.id);
 
   async function handleSubmit(event) {
     event.preventDefault();
@@ -28,8 +31,13 @@ export default function QueueForm({ item = null, start = false, onDone }) {
   return (
     <form className="form-grid" onSubmit={handleSubmit}>
       <Field label={t('product')} name="productName" defaultValue={item?.product_name} required />
+      {canAssign && (
+        <SelectField label={t('owner')} name="ownerId" value={ownerId} onChange={(e) => setOwnerId(Number(e.target.value))}>
+          {users.map((u) => <option key={u.id} value={u.id}>{u.display_name}</option>)}
+        </SelectField>
+      )}
       <SelectField label={t('filament')} name="filamentId" defaultValue={item?.filament_id ?? ''}>
-        <FilamentOptions ownOnly={own} />
+        <FilamentOptions ownOnly={own} ownerId={own ? ownerId : null} />
       </SelectField>
       <Field label={t('estimatedGrams')} name="estimatedGrams" type="number" defaultValue={item?.estimated_grams} required min="0.1" step="0.1" />
       <Field label={t('durationMinutes')} name="estimatedDurationMinutes" type="number" defaultValue={item?.estimated_duration_minutes || 60} required min="1" />

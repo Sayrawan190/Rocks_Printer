@@ -245,24 +245,31 @@ app.get('/api/queue', auth, asyncRoute(async (_req, res) => {
 }));
 
 app.post('/api/queue', auth, asyncRoute(async (req, res) => {
-  const ownerId = req.session.userId;
+  const requester = await currentUser(req.session.userId);
+  let ownerId = req.session.userId;
+  if (requester.is_admin && req.body.ownerId) {
+    const targetId = Number(req.body.ownerId);
+    const target = await db.query('SELECT id FROM users WHERE id=$1', [targetId]);
+    if (!target.rows[0]) return res.status(400).json({ error: 'Invalid owner' });
+    ownerId = targetId;
+  }
   const grams = validNumber(req.body.estimatedGrams, 0.01);
   const duration = validNumber(req.body.estimatedDurationMinutes, 1);
   if (!req.body.productName?.trim() || !grams || !duration || !req.body.filamentId) return res.status(400).json({ error: 'Complete all required fields' });
   const filament = await db.query('SELECT * FROM filaments WHERE id=$1', [req.body.filamentId]);
   const spool = filament.rows[0];
   if (!spool) return res.status(404).json({ error: 'Filament not found' });
-  if (!spool.owners.map(Number).includes(ownerId)) return res.status(403).json({ error: 'This filament is not shared with you' });
+  if (!spool.owners.map(Number).includes(ownerId)) return res.status(403).json({ error: 'This filament is not shared with the selected owner' });
   if (Number(spool.remaining_grams) < grams) return res.status(400).json({ error: 'Estimated grams exceed remaining filament' });
   const result = await db.query(`INSERT INTO queue_items
     (owner_id,product_name,filament_id,model_link,image_url,estimated_grams,estimated_duration_minutes,priority,notes,position)
     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,(SELECT COALESCE(MAX(position),0)+1 FROM queue_items)) RETURNING *`,
     [ownerId, req.body.productName.trim(), req.body.filamentId, req.body.modelLink || null, req.body.imageUrl || null,
      grams, Math.round(duration), ['Low','Normal','High'].includes(req.body.priority) ? req.body.priority : 'Normal', req.body.notes || null]);
-  await db.query('INSERT INTO queue_logs(queue_id,action,actor_id) VALUES($1,$2,$3)', [result.rows[0].id, 'Added', ownerId]);
+  await db.query('INSERT INTO queue_logs(queue_id,action,actor_id) VALUES($1,$2,$3)', [result.rows[0].id, 'Added', req.session.userId]);
   const admin = await db.query('SELECT user_id FROM admin_permissions WHERE singleton=TRUE');
   await addNotification(db, { userId:admin.rows[0].user_id, type:'queue_added',
-    params:{ productName:req.body.productName.trim() }, entityId:result.rows[0].id, createdBy:ownerId });
+    params:{ productName:req.body.productName.trim() }, entityId:result.rows[0].id, createdBy:req.session.userId });
   res.status(201).json(result.rows[0]);
 }));
 
