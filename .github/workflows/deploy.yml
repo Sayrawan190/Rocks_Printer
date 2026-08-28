@@ -1,0 +1,27 @@
+name: Deploy Printer
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: self-hosted
+
+    steps:
+      - name: Deploy latest main
+        run: |
+          cd /home/arthur/Documents/SecondS/VSCode/3DPrinterHub
+
+          git fetch origin
+          git reset --hard origin/main
+
+          npm ci
+
+          cd client
+          npm ci
+          npm run build
+          cd ..
+
+          pm2 restart printer
