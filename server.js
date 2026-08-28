@@ -151,10 +151,13 @@ const favoriteSelect = `
 
 const historySelect = `
   SELECT h.*, u.display_name AS owner_name,
-         sb.display_name AS started_by_name, fb.display_name AS finished_by_name
+         sb.display_name AS started_by_name, fb.display_name AS finished_by_name,
+         q.estimated_grams AS original_estimated_grams, q.estimated_duration_minutes AS original_duration_minutes,
+         q.priority AS original_priority, q.notes AS original_notes
   FROM print_history h JOIN users u ON u.id = h.owner_id
   LEFT JOIN users sb ON sb.id = h.started_by
-  LEFT JOIN users fb ON fb.id = h.finished_by`;
+  LEFT JOIN users fb ON fb.id = h.finished_by
+  LEFT JOIN queue_items q ON q.id = h.queue_id`;
 
 app.post('/api/login', asyncRoute(async (req, res) => {
   const username = String(req.body.username || '').trim();
@@ -565,6 +568,32 @@ app.delete('/api/history/:id', auth, asyncRoute(async (req, res) => {
     await client.query('COMMIT');
     res.json({ ok: true });
   } catch (error) { await client.query('ROLLBACK'); throw error; } finally { client.release(); }
+}));
+
+app.post('/api/history/:id/requeue', auth, adminOnly, asyncRoute(async (req, res) => {
+  const record = (await db.query(`SELECT h.*, q.estimated_grams AS original_estimated_grams,
+    q.estimated_duration_minutes AS original_duration_minutes, q.priority AS original_priority, q.notes AS original_notes
+    FROM print_history h LEFT JOIN queue_items q ON q.id = h.queue_id WHERE h.id=$1`, [req.params.id])).rows[0];
+  if (!record) return res.status(404).json({ error: 'History record not found' });
+  const filamentId = req.body.filamentId || record.filament_id;
+  const grams = validNumber(req.body.estimatedGrams ?? record.original_estimated_grams ?? (record.grams > 0 ? record.grams : null), 0.01);
+  const duration = validNumber(req.body.estimatedDurationMinutes ?? record.original_duration_minutes ?? record.duration_minutes, 1) || 60;
+  const priority = ['Low','Normal','High'].includes(req.body.priority) ? req.body.priority : (record.original_priority || 'Normal');
+  if (!filamentId || !grams) return res.status(400).json({ error: 'Choose an available filament and grams' });
+  const spool = (await db.query('SELECT * FROM filaments WHERE id=$1', [filamentId])).rows[0];
+  if (!spool) return res.status(404).json({ error: 'Filament not found' });
+  if (!spool.owners.map(Number).includes(record.owner_id)) return res.status(403).json({ error: 'This filament is not shared with the owner' });
+  if (Number(spool.remaining_grams) < grams) return res.status(400).json({ error: 'Estimated grams exceed remaining filament' });
+  const result = await db.query(`INSERT INTO queue_items
+    (owner_id,product_name,filament_id,model_link,image_url,estimated_grams,estimated_duration_minutes,priority,notes,position)
+    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,(SELECT COALESCE(MAX(position),0)+1 FROM queue_items)) RETURNING *`,
+    [record.owner_id, req.body.productName?.trim() || record.product_name, spool.id, record.model_link, record.image_url,
+     grams, Math.round(duration), priority, req.body.notes ?? record.original_notes ?? record.note]);
+  await db.query('INSERT INTO queue_logs(queue_id,action,actor_id) VALUES($1,$2,$3)', [result.rows[0].id, 'Added', req.user.id]);
+  const admin = await db.query('SELECT user_id FROM admin_permissions WHERE singleton=TRUE');
+  await addNotification(db, { userId:admin.rows[0].user_id, type:'queue_added',
+    params:{ productName:result.rows[0].product_name }, entityId:result.rows[0].id, createdBy:req.user.id });
+  res.status(201).json(result.rows[0]);
 }));
 
 app.get('/api/notifications', auth, asyncRoute(async (req, res) => {

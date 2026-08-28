@@ -40,7 +40,7 @@ function CurrentCard({ current, onChanged }) {
   }
 
   function openFinish(result) {
-    openModal(`${t('finish')} · ${t(result.toLowerCase())}`, <FinishForm result={result} onDone={onChanged} />);
+    openModal(`${t('finish')} · ${t(result.toLowerCase())}`, <FinishForm result={result} estimatedGrams={current.estimated_grams} onDone={onChanged} />);
   }
 
   if (!current) {

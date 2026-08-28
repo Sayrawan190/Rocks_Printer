@@ -2,7 +2,7 @@ import { useApp } from '../AppContext.jsx';
 import { api } from '../api.js';
 import { Field, TextAreaField, FormButtons } from '../components/FormFields.jsx';
 
-export default function FinishForm({ result, onDone }) {
+export default function FinishForm({ result, estimatedGrams = 0, onDone }) {
   const { t, closeModal, toast, loadFilaments, loadNotifications } = useApp();
 
   async function handleSubmit(event) {
@@ -22,7 +22,7 @@ export default function FinishForm({ result, onDone }) {
 
   return (
     <form className="form-grid" onSubmit={handleSubmit}>
-      <Field label={t('actualGrams')} name="grams" type="number" defaultValue={0} required min="0" step="0.1" full />
+      <Field label={t('actualGrams')} name="grams" type="number" defaultValue={estimatedGrams} required min="0" step="0.1" full />
       <TextAreaField label={t('resultNote')} name="note" full />
       <FormButtons onClose={closeModal} />
     </form>
