@@ -91,6 +91,10 @@ export default function Inventory() {
         <div className="owner-badges">
           {(f.owner_details || []).map((o) => <span key={o.id ?? o.name} className="mini-avatar" title={o.name}>{o.name[0]}</span>)}
         </div>
+        <div className="item-meta">
+          <span>{t('owners')}</span>
+          <strong>{(f.owner_details || []).map((o) => o.name).join(language === 'ar' ? '، ' : ', ') || '—'}</strong>
+        </div>
         <div>
           <div className="item-meta">
             <span>{t('remaining')}</span>
