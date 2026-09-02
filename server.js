@@ -23,6 +23,11 @@ if (process.env.NODE_ENV === 'production' && (!sessionSecret || sessionSecret.le
   process.exit(1);
 }
 
+// TLS terminates at Cloudflare in the Dokploy tunnel setup, so the connection
+// from Traefik to this container is HTTP. Allow explicitly enabling Secure
+// cookies for deployments whose reverse proxy preserves the HTTPS scheme.
+const sessionCookieSecure = process.env.SESSION_COOKIE_SECURE === 'true';
+
 const app = express();
 app.set('trust proxy', 1);
 
@@ -46,7 +51,7 @@ app.use(session({
   cookie: {
     httpOnly: true,
     sameSite: 'lax',
-    secure: process.env.NODE_ENV === 'production',
+    secure: sessionCookieSecure,
     maxAge: 1000 * 60 * 60 * 24 * 14
   }
 }));
