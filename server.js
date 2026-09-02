@@ -35,6 +35,36 @@ const PORT = Number(process.env.PORT) || 3000;
 const PUBLIC_DIR = path.join(__dirname, 'public');
 const asyncRoute = (fn) => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
 
+const PASSWORD_RESET_MIGRATION = '2026-09-02-reset-default-passwords';
+
+async function runMigrations() {
+  await db.query(`CREATE TABLE IF NOT EXISTS app_migrations (
+    name TEXT PRIMARY KEY,
+    applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  )`);
+
+  const client = await db.getClient();
+  try {
+    await client.query('BEGIN');
+    await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [PASSWORD_RESET_MIGRATION]);
+    const existing = await client.query('SELECT 1 FROM app_migrations WHERE name=$1', [PASSWORD_RESET_MIGRATION]);
+    if (!existing.rowCount) {
+      const passwordHash = await bcrypt.hash('1234', 12);
+      await client.query(
+        'UPDATE users SET password_hash=$1 WHERE username = ANY($2::text[])',
+        [passwordHash, ['Abdullah', 'Basel', 'Saleh', 'Rocks']]
+      );
+      await client.query('INSERT INTO app_migrations (name) VALUES ($1)', [PASSWORD_RESET_MIGRATION]);
+    }
+    await client.query('COMMIT');
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
 app.get('/healthz', asyncRoute(async (_req, res) => {
   await db.query('SELECT 1');
   res.json({ status: 'ok' });
@@ -782,4 +812,12 @@ app.use((error, _req, res, _next) => {
   res.status(error.status || 500).json({ error:message });
 });
 
-app.listen(PORT, () => console.log(`Print Hub running at http://localhost:${PORT}`));
+async function start() {
+  await runMigrations();
+  app.listen(PORT, () => console.log(`Print Hub running at http://localhost:${PORT}`));
+}
+
+start().catch((error) => {
+  console.error('Failed to start Print Hub:', error);
+  process.exit(1);
+});
