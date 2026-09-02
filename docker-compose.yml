@@ -7,6 +7,7 @@ services:
     environment:
       NODE_ENV: production
       PORT: 3000
+      DATABASE_URL: ${DATABASE_URL:-}
       PGHOST: database
       PGPORT: 5432
       PGDATABASE: ${POSTGRES_DB:-print_hub}
