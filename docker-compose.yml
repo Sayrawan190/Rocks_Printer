@@ -13,7 +13,7 @@ services:
       PGDATABASE: ${POSTGRES_DB:-print_hub}
       PGUSER: ${POSTGRES_USER:-print_hub}
       PGPASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in Dokploy}
-      DATABASE_SSL: "false"
+      DATABASE_SSL: ${DATABASE_SSL:-false}
       SESSION_SECRET: ${SESSION_SECRET:?Set SESSION_SECRET in Dokploy}
     expose:
       - "3000"
