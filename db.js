@@ -1,8 +1,9 @@
 const { Pool } = require('pg');
 
+const sslEnabled = ['true', 'require'].includes(String(process.env.DATABASE_SSL || '').toLowerCase());
 const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
-  ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false
+  ...(process.env.DATABASE_URL ? { connectionString: process.env.DATABASE_URL } : {}),
+  ssl: sslEnabled ? { rejectUnauthorized: false } : false
 });
 
 pool.on('error', (error) => console.error('Unexpected PostgreSQL error:', error));

@@ -8,8 +8,18 @@ const bcrypt = require('bcryptjs');
 const pgSession = require('connect-pg-simple')(session);
 const db = require('./db');
 
-if (!process.env.DATABASE_URL) {
-  console.error('DATABASE_URL is missing. Copy .env.example to .env and update it.');
+const hasDatabaseConfig = process.env.DATABASE_URL || (
+  process.env.PGHOST && process.env.PGDATABASE && process.env.PGUSER && process.env.PGPASSWORD
+);
+
+if (!hasDatabaseConfig) {
+  console.error('Database configuration is missing. Set DATABASE_URL or the PGHOST/PGDATABASE/PGUSER/PGPASSWORD variables.');
+  process.exit(1);
+}
+
+const sessionSecret = process.env.SESSION_SECRET;
+if (process.env.NODE_ENV === 'production' && (!sessionSecret || sessionSecret.length < 32)) {
+  console.error('SESSION_SECRET must contain at least 32 characters in production.');
   process.exit(1);
 }
 
@@ -20,11 +30,16 @@ const PORT = Number(process.env.PORT) || 3000;
 const PUBLIC_DIR = path.join(__dirname, 'public');
 const asyncRoute = (fn) => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
 
+app.get('/healthz', asyncRoute(async (_req, res) => {
+  await db.query('SELECT 1');
+  res.json({ status: 'ok' });
+}));
+
 app.use(helmet({ contentSecurityPolicy: false }));
 app.use(express.json({ limit: '2mb' }));
 app.use(session({
   store: new pgSession({ pool: db.pool, createTableIfMissing: true }),
-  secret: process.env.SESSION_SECRET || 'development-only-change-me',
+  secret: sessionSecret || 'development-only-change-me',
   resave: false,
   saveUninitialized: false,
   rolling: true,

@@ -84,3 +84,7 @@ Final/
 ```
 
 All application records are stored in PostgreSQL. The browser only keeps the display theme and a small language fallback.
+
+## Dokploy
+
+The repository includes production Docker images, a persistent PostgreSQL service, health checks, and a GitHub CI workflow. Follow the Arabic deployment guide in [DOKPLOY.md](DOKPLOY.md).
