@@ -614,6 +614,7 @@ app.delete('/api/history/:id', auth, asyncRoute(async (req, res) => {
         await client.query('UPDATE filaments SET remaining_grams=$1 WHERE id=$2', [restored, spool.id]);
       }
     }
+    await client.query('DELETE FROM filament_logs WHERE history_id=$1', [record.id]);
     await client.query('DELETE FROM print_history WHERE id=$1', [record.id]);
     await client.query('COMMIT');
     res.json({ ok: true });
