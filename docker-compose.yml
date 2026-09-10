@@ -6,7 +6,7 @@ services:
     restart: unless-stopped
     environment:
       NODE_ENV: production
-      PORT: 3000
+      PORT: 3001
       DATABASE_URL: ${DATABASE_URL:-}
       PGHOST: database
       PGPORT: 5432
@@ -16,12 +16,12 @@ services:
       DATABASE_SSL: ${DATABASE_SSL:-false}
       SESSION_SECRET: ${SESSION_SECRET:?Set SESSION_SECRET in Dokploy}
     expose:
-      - "3000"
+      - "3001"
     depends_on:
       database:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3000/healthz"]
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3001/healthz"]
       interval: 30s
       timeout: 5s
       retries: 3

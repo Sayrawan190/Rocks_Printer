@@ -9,19 +9,20 @@ RUN npm run build
 FROM node:20-alpine AS production
 
 ENV NODE_ENV=production \
-    PORT=3000
+    PORT=3001
 
 WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev && npm cache clean --force
 
 COPY db.js server.js ./
+COPY services ./services
 COPY --from=client-builder /app/public ./public
 
 USER node
-EXPOSE 3000
+EXPOSE 3001
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
-  CMD wget -qO- http://127.0.0.1:3000/healthz >/dev/null || exit 1
+  CMD wget -qO- http://127.0.0.1:3001/healthz >/dev/null || exit 1
 
 CMD ["node", "server.js"]

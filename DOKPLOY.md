@@ -2,7 +2,7 @@
 
 المشروع مجهز كخدمة **Docker Compose** تتكون من:
 
-- `app`: تطبيق Node.js على المنفذ الداخلي `3000`.
+- `app`: تطبيق Node.js على المنفذ الداخلي `3001`.
 - `database`: PostgreSQL 16 مع Volume دائم باسم `postgres-data`.
 
 قاعدة البيانات لا تُفتح للإنترنت، ولا توجد أسرار محفوظة في GitHub.
@@ -58,7 +58,7 @@ openssl rand -hex 32
    - Path: `/`
    - Internal Path: `/`
    - Service: `app`
-   - Container Port: `3000`
+   - Container Port: `3001`
    - HTTPS: `OFF`؛ Cloudflare ينهي اتصال HTTPS عند الحافة.
 2. احفظ ثم أعد نشر Compose حتى يضيف Dokploy مسار Traefik.
 3. اختبر المسار الداخلي قبل التحويل:
