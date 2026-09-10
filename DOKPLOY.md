@@ -49,22 +49,31 @@ openssl rand -hex 32
 
 > الدخول عبر جلسة Production يتطلب HTTPS. استخدم الدومين النهائي مع HTTPS لاختبار تسجيل الدخول.
 
-## 4. ربط الدومين
+## 4. ربط الدومين عبر Cloudflare Tunnel
 
-1. لدى مزود DNS أنشئ سجل `A`:
-   - Name/Host: اسم النطاق الفرعي، مثل `printer`.
-   - Value: عنوان IPv4 العام لخادم Dokploy.
-2. انتظر انتشار DNS وتأكد أن النطاق يشير إلى الخادم.
-3. في خدمة Compose افتح **Domains** ثم **Create Domain** وأدخل:
-   - Host: مثل `printer.example.com` بدون `https://`.
+الإعداد الحالي يستخدم Cloudflare Tunnel باسم `rocks` بدل فتح عنوان الخادم للعامة. سجل `printer.rocks.quest` موجود مسبقًا كـ CNAME خاص بالـ Tunnel.
+
+1. في خدمة Compose افتح **Domains** ثم **Create Domain** وأدخل:
+   - Host: `printer.rocks.quest`
    - Path: `/`
+   - Internal Path: `/`
    - Service: `app`
    - Container Port: `3000`
-   - HTTPS: `ON`
-   - Certificate: `Let's Encrypt`
-4. احفظ ثم أعد نشر Compose؛ تغييرات Domains في Compose تحتاج Redeploy.
+   - HTTPS: `OFF`؛ Cloudflare ينهي اتصال HTTPS عند الحافة.
+2. احفظ ثم أعد نشر Compose حتى يضيف Dokploy مسار Traefik.
+3. اختبر المسار الداخلي قبل التحويل:
 
-إذا كان DNS على Cloudflare، استخدم وضع SSL/TLS **Full (strict)**. يفضل جعل السحابة DNS-only حتى يصدر Let's Encrypt الشهادة، ثم يمكن تفعيل Proxy بعد نجاح HTTPS.
+   ```bash
+   curl -H "Host: printer.rocks.quest" http://SERVER_IP/healthz
+   ```
+
+4. بعد ظهور `{"status":"ok"}` افتح Cloudflare **Tunnels → rocks → Routes**، ثم غيّر Service URL لمسار `printer.rocks.quest` من الخدمة القديمة إلى:
+
+   ```text
+   http://localhost:80
+   ```
+
+5. تأكد أن `https://printer.rocks.quest/healthz` يعمل. اترك إعداد DNS كما هو ولا تستبدل سجل Tunnel بسجل `A`.
 
 ## 5. البيانات والنسخ الاحتياطية
 

@@ -29,6 +29,33 @@ export const words = {
   }
 };
 
+export const extraWords = {
+  en: {
+    printCostDetails: 'Print cost details', costInformationMissing: 'Cost information is incomplete',
+    missingFilamentPrice: 'filament price is missing', missingFilamentWeight: 'filament spool weight is missing', priceUnavailable: 'Price not entered',
+    filamentCost: 'Filament', machineCost: 'Machine & maintenance', electricityCost: 'Electricity',
+    ownerSuccessRate: 'Success rate used', failureRate: 'Failure rate', baseProductionCost: 'Direct production cost', failureRiskCost: 'Failure-risk allocation',
+    adjustedProductionCost: 'Adjusted production cost', directPrintCost: 'Direct / wasted print cost',
+    failedPrintCostNote: 'Failed and canceled prints show their direct cost only.',
+    printerCostSettings: 'Printer cost settings', printerCostSettingsHint: 'Used for new finalized prints. Existing cost snapshots are preserved.',
+    printerPurchasePrice: 'Printer purchase price (SAR)', expectedPrinterLifetimeHours: 'Expected lifetime (hours)',
+    expectedMaintenanceCost: 'Expected maintenance cost (SAR)', averagePrinterPowerWatts: 'Average power consumption (W)',
+    electricityPricePerKwh: 'Electricity price / kWh (SAR)', minimumSuccessRate: 'Minimum success rate (%)', currency: 'Currency'
+  },
+  ar: {
+    printCostDetails: 'تفاصيل تكلفة الطباعة', costInformationMissing: 'بيانات التكلفة ناقصة',
+    missingFilamentPrice: 'سعر الفيلمنت غير مدخل', missingFilamentWeight: 'وزن بكرة الفيلمنت غير متوفر', priceUnavailable: 'السعر غير مدخل',
+    filamentCost: 'الفيلمنت', machineCost: 'الطابعة والصيانة', electricityCost: 'الكهرباء',
+    ownerSuccessRate: 'نسبة النجاح المستخدمة', failureRate: 'نسبة الخطأ', baseProductionCost: 'تكلفة الإنتاج المباشرة', failureRiskCost: 'تكلفة احتمال الفشل',
+    adjustedProductionCost: 'تكلفة الإنتاج بعد احتساب الفشل', directPrintCost: 'التكلفة المباشرة / المهدرة',
+    failedPrintCostNote: 'الطبعات الفاشلة والملغاة تعرض تكلفتها المباشرة فقط.',
+    printerCostSettings: 'إعدادات تكلفة الطابعة', printerCostSettingsHint: 'تستخدم للطبعات الجديدة عند إنهائها؛ لقطات التكاليف السابقة تبقى محفوظة.',
+    printerPurchasePrice: 'سعر شراء الطابعة (ر.س)', expectedPrinterLifetimeHours: 'العمر المتوقع (ساعة)',
+    expectedMaintenanceCost: 'تكلفة الصيانة المتوقعة (ر.س)', averagePrinterPowerWatts: 'متوسط استهلاك الطاقة (واط)',
+    electricityPricePerKwh: 'سعر الكهرباء / كيلوواط ساعة (ر.س)', minimumSuccessRate: 'أقل نسبة نجاح (%)', currency: 'العملة'
+  }
+};
+
 export function fmtDate(value, language, includeTime = false) {
   if (!value) return '—';
   return new Intl.DateTimeFormat(

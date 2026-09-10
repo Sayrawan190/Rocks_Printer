@@ -78,7 +78,7 @@ export default function Inventory() {
     const percent = Math.max(0, Math.min(100, (Number(f.remaining_grams) / Number(f.total_grams)) * 100));
     const status = filamentStatus(f);
     const critical = percent < 10;
-    const price = f.price_sar ? Number(f.price_sar) / Number(f.total_grams) : null;
+    const price = f.price_sar !== null && f.price_sar !== undefined ? Number(f.price_sar) / Number(f.total_grams) : null;
     return (
       <article key={f.id} className={`card item-card${critical ? ' critical-glow' : ''}`}>
         <div className="spool-head">
@@ -104,7 +104,7 @@ export default function Inventory() {
         </div>
         <div className="item-meta">
           <span>{t('pricePerGram')}</span>
-          <strong>{price ? `${fmtNum(price, language, 3)} ${t('sar')}` : '—'}</strong>
+          <strong>{price !== null ? `${fmtNum(price, language, 3)} ${t('sar')}` : t('priceUnavailable')}</strong>
         </div>
         <div className="item-meta">
           <span>{t('usage')}</span>

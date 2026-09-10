@@ -34,6 +34,9 @@ SELECT TRUE, id FROM users WHERE username = 'Abdullah';
 INSERT INTO app_settings (key, value)
 VALUES ('printer_name', '"Ender 3 V3 SE"'::jsonb);
 
+INSERT INTO app_settings (key, value)
+VALUES ('printer_cost_settings', '{"printerPurchasePrice":850,"expectedPrinterLifetimeHours":5000,"expectedMaintenanceCost":500,"averagePrinterPowerWatts":120,"electricityPricePerKwh":0.18,"minimumSuccessRate":0.1,"currency":"SAR"}'::jsonb);
+
 INSERT INTO filaments (id, name, material, color, color_hex, total_grams, remaining_grams, owners, price_sar, purchase_date, notes)
 SELECT 1, 'Filament #1 - Black', 'PLA', 'Black', '#111827', 1000, 808.42,
        COALESCE(jsonb_agg(id ORDER BY id), '[]'::jsonb), NULL, DATE '2026-06-30', 'Imported inventory spool #1. Excel total consumption: 191.58 g.'

@@ -4,6 +4,7 @@ import { Badge, Empty, ImageThumb } from './Shared.jsx';
 import HistoryForm from '../forms/HistoryForm.jsx';
 import HistoryDeleteForm from '../forms/HistoryDeleteForm.jsx';
 import HistoryRequeueForm from '../forms/HistoryRequeueForm.jsx';
+import CostCell from './CostCell.jsx';
 
 export default function HistoryTable({ items, compact = false, onDone }) {
   const { t, language, me, openModal } = useApp();
@@ -31,6 +32,7 @@ export default function HistoryTable({ items, compact = false, onDone }) {
             <th>{t('result')}</th>
             <th>{t('gramsUsed')}</th>
             <th>{t('duration')}</th>
+            <th>{t('cost')}</th>
             <th>{t('date')}</th>
             {!compact && <><th>{t('note')}</th><th>{t('finishedBy')}</th></>}
             {canManage && <th>{t('actions')}</th>}
@@ -50,6 +52,7 @@ export default function HistoryTable({ items, compact = false, onDone }) {
               <td><Badge value={i.result} /></td>
               <td>{fmtNum(i.grams, language, 1)}g</td>
               <td>{fmtNum(i.duration_minutes, language)} {t('minutes')}</td>
+              <td><CostCell record={i} /></td>
               <td>{fmtDate(i.finished_at, language, true)}</td>
               {!compact && <><td>{i.note || '—'}</td><td>{i.finished_by_name || '—'}</td></>}
               {canManage && (

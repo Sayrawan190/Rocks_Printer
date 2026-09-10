@@ -3,9 +3,10 @@ import { useApp } from '../AppContext.jsx';
 import { api } from '../api.js';
 import { Badge, PageHead } from '../components/Shared.jsx';
 import TransferForm from '../forms/TransferForm.jsx';
+import PrinterCostSettingsForm from '../forms/PrinterCostSettingsForm.jsx';
 
 export default function Admin() {
-  const { t, me, users, setMe, loadUsers, loadFilaments, loadNotifications, toast, navigate, setDrawer } = useApp();
+  const { t, me, users, setMe, loadUsers, loadFilaments, loadNotifications, toast, navigate, setDrawer, openModal } = useApp();
 
   useEffect(() => {
     if (!me?.is_admin) navigate('home');
@@ -76,6 +77,11 @@ export default function Admin() {
           </div>
         </section>
       </div>
+      <section className="card" style={{ marginTop: 17 }}>
+        <div className="section-title"><h3>{t('printerCostSettings')}</h3></div>
+        <p className="muted">{t('printerCostSettingsHint')}</p>
+        <button className="btn secondary" onClick={() => openModal(t('printerCostSettings'), <PrinterCostSettingsForm />)}>{t('settings')}</button>
+      </section>
       <section className="card" style={{ marginTop: 17 }}>
         <div className="section-title"><h3>{t('quickLinks')}</h3></div>
         <div className="actions">

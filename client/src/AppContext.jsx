@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { api, setUnauthorizedHandler } from './api.js';
-import { words } from './i18n.js';
+import { words, extraWords } from './i18n.js';
 
 const AppContext = createContext(null);
 
@@ -23,7 +23,7 @@ export function AppProvider({ children }) {
   const meRef = useRef(me);
   meRef.current = me;
 
-  const t = useCallback((key) => words[language]?.[key] || words.en[key] || key, [language]);
+  const t = useCallback((key) => words[language]?.[key] || extraWords[language]?.[key] || words.en[key] || extraWords.en[key] || key, [language]);
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;

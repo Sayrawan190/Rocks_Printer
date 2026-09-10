@@ -116,7 +116,8 @@ CREATE TABLE IF NOT EXISTS print_history (
   image_url TEXT,
   note TEXT,
   started_by INTEGER REFERENCES users(id),
-  finished_by INTEGER REFERENCES users(id)
+  finished_by INTEGER REFERENCES users(id),
+  cost_snapshot JSONB
 );
 
 CREATE TABLE IF NOT EXISTS filament_logs (

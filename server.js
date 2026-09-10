@@ -7,6 +7,7 @@ const helmet = require('helmet');
 const bcrypt = require('bcryptjs');
 const pgSession = require('connect-pg-simple')(session);
 const db = require('./db');
+const { DEFAULT_PRINTER_COST_SETTINGS, normalizeSettings, calculatePrintCost } = require('./services/printCost');
 
 const hasDatabaseConfig = process.env.DATABASE_URL || (
   process.env.PGHOST && process.env.PGDATABASE && process.env.PGUSER && process.env.PGPASSWORD
@@ -36,6 +37,7 @@ const PUBLIC_DIR = path.join(__dirname, 'public');
 const asyncRoute = (fn) => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
 
 const PASSWORD_RESET_MIGRATION = '2026-09-02-reset-default-passwords';
+const PRINT_COST_MIGRATION = '2026-09-10-print-costs';
 
 async function runMigrations() {
   await db.query(`CREATE TABLE IF NOT EXISTS app_migrations (
@@ -55,6 +57,13 @@ async function runMigrations() {
         [passwordHash, ['Abdullah', 'Basel', 'Saleh', 'Rocks']]
       );
       await client.query('INSERT INTO app_migrations (name) VALUES ($1)', [PASSWORD_RESET_MIGRATION]);
+    }
+    const costMigration = await client.query('SELECT 1 FROM app_migrations WHERE name=$1', [PRINT_COST_MIGRATION]);
+    if (!costMigration.rowCount) {
+      await client.query('ALTER TABLE print_history ADD COLUMN IF NOT EXISTS cost_snapshot JSONB');
+      await client.query(`INSERT INTO app_settings(key,value) VALUES($1,$2::jsonb)
+        ON CONFLICT(key) DO NOTHING`, ['printer_cost_settings', JSON.stringify(DEFAULT_PRINTER_COST_SETTINGS)]);
+      await client.query('INSERT INTO app_migrations (name) VALUES ($1)', [PRINT_COST_MIGRATION]);
     }
     await client.query('COMMIT');
   } catch (error) {
@@ -122,6 +131,62 @@ function validNumber(value, min = 0) {
 function listOwners(value) {
   const list = Array.isArray(value) ? value.map(Number).filter(Number.isInteger) : [];
   return [...new Set(list)];
+}
+
+async function readPrinterCostSettings(executor = db) {
+  const { rows } = await executor.query('SELECT value FROM app_settings WHERE key=$1', ['printer_cost_settings']);
+  return normalizeSettings(rows[0]?.value || DEFAULT_PRINTER_COST_SETTINGS);
+}
+
+async function successRatesForHistory(executor, ownerIds) {
+  const [owners, global] = await Promise.all([
+    ownerIds.length ? executor.query(`SELECT owner_id, COUNT(*)::int AS total,
+      COUNT(*) FILTER (WHERE result='Completed')::int AS successful
+      FROM print_history WHERE owner_id = ANY($1::int[]) GROUP BY owner_id`, [ownerIds]) : Promise.resolve({ rows: [] }),
+    executor.query(`SELECT COUNT(*)::int AS total, COUNT(*) FILTER (WHERE result='Completed')::int AS successful FROM print_history`)
+  ]);
+  const ownerRates = new Map(owners.rows.map((row) => [Number(row.owner_id), Number(row.total) ? Number(row.successful) / Number(row.total) : null]));
+  const globalRow = global.rows[0];
+  return {
+    ownerRates,
+    globalRate: Number(globalRow?.total) ? Number(globalRow.successful) / Number(globalRow.total) : null
+  };
+}
+
+function recordCost(record, settings, rates) {
+  if (record.cost_snapshot?.isComplete) return record.cost_snapshot;
+  return calculatePrintCost({
+    gramsUsed: record.grams,
+    durationMinutes: record.duration_minutes,
+    filament: { priceSar: record.current_filament_price_sar, totalGrams: record.current_filament_total_grams },
+    ownerSuccessRate: rates.ownerRates.get(Number(record.owner_id)),
+    globalSuccessRate: rates.globalRate,
+    result: record.result,
+    settings
+  });
+}
+
+async function attachHistoryCosts(records, executor = db) {
+  if (!records.length) return records;
+  const [settings, rates] = await Promise.all([
+    readPrinterCostSettings(executor),
+    successRatesForHistory(executor, [...new Set(records.map((record) => Number(record.owner_id)))])
+  ]);
+  return records.map((record) => ({ ...record, cost: recordCost(record, settings, rates) }));
+}
+
+async function snapshotHistoryCost(executor, historyId) {
+  const { rows } = await executor.query(`${historySelect} WHERE h.id=$1`, [historyId]);
+  // An edit creates a fresh final cost using the current inputs; do not reuse
+  // the previous immutable snapshot while producing the replacement.
+  if (rows[0]) rows[0].cost_snapshot = null;
+  const [record] = await attachHistoryCosts(rows, executor);
+  if (record?.cost?.isComplete) {
+    await executor.query('UPDATE print_history SET cost_snapshot=$1::jsonb WHERE id=$2', [JSON.stringify(record.cost), historyId]);
+  } else {
+    await executor.query('UPDATE print_history SET cost_snapshot=NULL WHERE id=$1', [historyId]);
+  }
+  return record?.cost;
 }
 
 const notificationText = {
@@ -203,11 +268,13 @@ const historySelect = `
   SELECT h.*, u.display_name AS owner_name,
          sb.display_name AS started_by_name, fb.display_name AS finished_by_name,
          q.estimated_grams AS original_estimated_grams, q.estimated_duration_minutes AS original_duration_minutes,
-         q.priority AS original_priority, q.notes AS original_notes
+         q.priority AS original_priority, q.notes AS original_notes,
+         f.price_sar AS current_filament_price_sar, f.total_grams AS current_filament_total_grams
   FROM print_history h JOIN users u ON u.id = h.owner_id
   LEFT JOIN users sb ON sb.id = h.started_by
   LEFT JOIN users fb ON fb.id = h.finished_by
-  LEFT JOIN queue_items q ON q.id = h.queue_id`;
+  LEFT JOIN queue_items q ON q.id = h.queue_id
+  LEFT JOIN filaments f ON f.id = h.filament_id`;
 
 app.post('/api/login', asyncRoute(async (req, res) => {
   const username = String(req.body.username || '').trim();
@@ -276,6 +343,7 @@ app.get('/api/dashboard', auth, asyncRoute(async (req, res) => {
     db.query('SELECT COALESCE(SUM(total_cost),0)::float AS total FROM maintenance_records')
   ]);
   const recent = await db.query(`${historySelect} ORDER BY h.finished_at DESC LIMIT 5`);
+  const recentWithCosts = await attachHistoryCosts(recent.rows);
   const profile = await db.query(`SELECT
       (SELECT COUNT(*) FROM queue_items WHERE owner_id=$1)::int AS total_requests,
       (SELECT COUNT(*) FROM queue_items WHERE owner_id=$1 AND status IN ('Pending','Printing'))::int AS active_queue,
@@ -289,7 +357,7 @@ app.get('/api/dashboard', auth, asyncRoute(async (req, res) => {
   res.json({
     current: current.rows[0] || null,
     cards: { queue: queue.rows[0], filaments: filaments.rows[0], history: history.rows[0], favorites: favorites.rows[0].count, maintenance: maintenance.rows[0].total },
-    recent: recent.rows,
+    recent: recentWithCosts,
     profile: profile.rows[0]
   });
 }));
@@ -445,6 +513,7 @@ app.post('/api/current/finish', auth, adminOnly, asyncRoute(async (req, res) => 
       VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15) RETURNING id`,
       [active.queue_id,active.product_name,active.owner_id,active.filament_id,active.filament_name,active.filament_color,
        grams,resultType,elapsed,active.started_at,active.model_link,active.image_url,req.body.note || null,active.started_by,req.user.id]);
+    await snapshotHistoryCost(client, history.rows[0].id);
     if (spool && grams > 0) {
       await client.query('UPDATE filaments SET remaining_grams=remaining_grams-$1,usage_count=usage_count+1 WHERE id=$2', [grams,spool.id]);
       await client.query(`INSERT INTO filament_logs(filament_id,history_id,product_name,owner_id,grams,result,note)
@@ -552,9 +621,20 @@ app.get('/api/filaments/:id/logs', auth, asyncRoute(async (req, res) => {
   res.json(rows);
 }));
 
+app.get('/api/printer-cost-settings', auth, asyncRoute(async (_req, res) => {
+  res.json(await readPrinterCostSettings());
+}));
+
+app.put('/api/printer-cost-settings', auth, adminOnly, asyncRoute(async (req, res) => {
+  const settings = normalizeSettings(req.body);
+  await db.query(`INSERT INTO app_settings(key,value,updated_at) VALUES($1,$2::jsonb,NOW())
+    ON CONFLICT(key) DO UPDATE SET value=EXCLUDED.value,updated_at=NOW()`, ['printer_cost_settings', JSON.stringify(settings)]);
+  res.json(settings);
+}));
+
 app.get('/api/history', auth, asyncRoute(async (_req, res) => {
   const { rows } = await db.query(`${historySelect} ORDER BY h.finished_at DESC`);
-  res.json(rows);
+  res.json(await attachHistoryCosts(rows));
 }));
 
 async function verifyPassword(userId, password) {
@@ -593,6 +673,7 @@ app.put('/api/history/:id', auth, asyncRoute(async (req, res) => {
     await client.query(`UPDATE print_history SET product_name=$1,grams=$2,result=$3,duration_minutes=$4,note=$5 WHERE id=$6`,
       [req.body.productName?.trim() || record.product_name, grams, result, Math.round(duration), note, record.id]);
     await client.query('UPDATE filament_logs SET grams=$1,result=$2,note=$3 WHERE history_id=$4', [grams, result, note, record.id]);
+    await snapshotHistoryCost(client, record.id);
     await client.query('COMMIT');
     res.json({ ok: true });
   } catch (error) { await client.query('ROLLBACK'); throw error; } finally { client.release(); }
