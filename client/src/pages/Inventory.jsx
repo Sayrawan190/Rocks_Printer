@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useApp } from '../AppContext.jsx';
 import { api } from '../api.js';
-import { fmtNum } from '../i18n.js';
+import { fmtMoney, fmtNum } from '../i18n.js';
 import { Badge, Empty, FilterSelect, PageHead } from '../components/Shared.jsx';
 import FilamentForm from '../forms/FilamentForm.jsx';
 import FilamentLog from '../components/FilamentLog.jsx';
@@ -104,7 +104,7 @@ export default function Inventory() {
         </div>
         <div className="item-meta">
           <span>{t('pricePerGram')}</span>
-          <strong>{price !== null ? `${fmtNum(price, language, 3)} ${t('sar')}` : t('priceUnavailable')}</strong>
+          <strong>{price !== null ? `${fmtMoney(price, 3)} ${t('sar')}` : t('priceUnavailable')}</strong>
         </div>
         <div className="item-meta">
           <span>{t('usage')}</span>

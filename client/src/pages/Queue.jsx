@@ -107,9 +107,7 @@ export default function Queue() {
                         <div>
                           <strong>{i.product_name}</strong>
                           {i.model_link && <><br /><a className="link" href={i.model_link} target="_blank" rel="noreferrer">{t('view')}</a></>}
-                          {i.model_file_name && <><br />{me.is_admin
-                            ? <a className="link" href={`/api/queue/${i.id}/model-file`}>{t('downloadModel')}</a>
-                            : <small className="file-attached">{t('attachedModel')}: {i.model_file_name}</small>}</>}
+                          {i.model_file_name && <><br /><small className="file-attached">{t('attachedModel')}: {i.model_file_name}</small></>}
                         </div>
                       </div>
                     </td>
@@ -121,17 +119,20 @@ export default function Queue() {
                     <td>{fmtDate(i.added_at, language)}</td>
                     <td>
                       <div className="row-actions">
+                        {me.is_admin && i.model_file_name && (
+                          <a className="btn secondary small icon-button" href={`/api/queue/${i.id}/model-file`} title={t('downloadModel')} aria-label={t('downloadModel')}>⇩</a>
+                        )}
                         {showActions && me.is_admin && (
                           <>
-                            <button className="btn primary small" onClick={() => openStart(i)}>{t('startPrinting')}</button>
-                            <button className="btn secondary small" onClick={() => handleReorder(i.id, 'up')}>↑</button>
-                            <button className="btn secondary small" onClick={() => handleReorder(i.id, 'down')}>↓</button>
+                            <button className="btn primary small icon-button" onClick={() => openStart(i)} title={t('startPrinting')} aria-label={t('startPrinting')}>▶</button>
+                            <button className="btn secondary small icon-button" onClick={() => handleReorder(i.id, 'up')} title={t('moveUp')} aria-label={t('moveUp')}>↑</button>
+                            <button className="btn secondary small icon-button" onClick={() => handleReorder(i.id, 'down')} title={t('moveDown')} aria-label={t('moveDown')}>↓</button>
                           </>
                         )}
                         {showActions && (own || me.is_admin) && (
                           <>
-                            <button className="btn secondary small" onClick={() => openEdit(i)}>{t('edit')}</button>
-                            <button className="btn danger outline small" onClick={() => handleDelete(i.id)}>{t('delete')}</button>
+                            <button className="btn secondary small icon-button" onClick={() => openEdit(i)} title={t('edit')} aria-label={t('edit')}>✎</button>
+                            <button className="btn danger outline small icon-button" onClick={() => handleDelete(i.id)} title={t('delete')} aria-label={t('delete')}>×</button>
                           </>
                         )}
                       </div>

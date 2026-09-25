@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useApp } from '../AppContext.jsx';
 import { api } from '../api.js';
-import { fmtNum } from '../i18n.js';
+import { fmtMoney, fmtNum } from '../i18n.js';
 import { Loader, PageHead, StatCard, SummaryRow } from '../components/Shared.jsx';
 
 export default function Statistics() {
@@ -37,7 +37,7 @@ export default function Statistics() {
         <StatCard label={t('mostUsedFilament')} value={d.top.filament || '—'} icon="◎" />
         <StatCard label={t('mostUsedColor')} value={d.top.color || '—'} icon="●" />
         <StatCard label={t('mostActiveUser')} value={d.top.active_user || '—'} icon="↗" />
-        <StatCard label={t('maintenanceCost')} value={`${fmtNum(d.maintenance.total_cost, language, 2)} ${t('sar')}`} icon="⌘" />
+        <StatCard label={t('maintenanceCost')} value={`${fmtMoney(d.maintenance.total_cost, 2)} ${t('sar')}`} icon="⌘" />
       </div>
       <div className="grid two-col" style={{ marginTop: 17 }}>
         <section className="card">
@@ -89,7 +89,7 @@ export default function Statistics() {
           <hr style={{ border: 0, borderTop: '1px solid var(--line)', margin: '20px 0' }} />
           <div className="bar-list">
             {d.payments.map((p) => (
-              <SummaryRow key={p.display_name} label={`${t('totalPaid')} · ${p.display_name}`} value={`${fmtNum(p.paid, language, 2)} ${t('sar')}`} />
+              <SummaryRow key={p.display_name} label={`${t('totalPaid')} · ${p.display_name}`} value={`${fmtMoney(p.paid, 2)} ${t('sar')}`} />
             ))}
           </div>
         </section>

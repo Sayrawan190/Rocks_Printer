@@ -9,6 +9,7 @@ export default function QueueForm({ item = null, start = false, onDone }) {
   const own = !start;
   const canAssign = me.is_admin && !item && !start;
   const [ownerId, setOwnerId] = useState(item?.owner_id ?? me.id);
+  const [selectedModelFile, setSelectedModelFile] = useState('');
 
   async function handleSubmit(event) {
     event.preventDefault();
@@ -47,11 +48,24 @@ export default function QueueForm({ item = null, start = false, onDone }) {
       </SelectField>
       <Field label={t('modelLink')} name="modelLink" type="url" defaultValue={item?.model_link} />
       {!item && !start && (
-        <label className="full upload-field">
-          <span>{t('uploadModel')}</span>
-          <input name="modelFile" type="file" accept=".stl,.3mf" />
+        <div className="full upload-field">
+          <span className="field-label">{t('uploadModel')}</span>
+          <div className={`upload-picker${selectedModelFile ? ' selected' : ''}`}>
+            <input
+              id="model-file"
+              className="visually-hidden"
+              name="modelFile"
+              type="file"
+              accept=".stl,.3mf"
+              onChange={(event) => setSelectedModelFile(event.target.files?.[0]?.name || '')}
+            />
+            <label className="upload-button" htmlFor="model-file">{t('chooseModelFile')}</label>
+            {selectedModelFile ? (
+              <span className="upload-selected"><b aria-hidden="true">✓</b>{selectedModelFile}</span>
+            ) : <span className="upload-empty">{t('noModelFileChosen')}</span>}
+          </div>
           <small>{t('modelInputHint')}</small>
-        </label>
+        </div>
       )}
       {item?.model_file_name && (
         <p className="form-file-note full">{t('attachedModel')}: {item.model_file_name}</p>

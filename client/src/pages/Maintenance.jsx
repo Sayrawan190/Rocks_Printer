@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useApp } from '../AppContext.jsx';
 import { api } from '../api.js';
-import { fmtDate, fmtNum } from '../i18n.js';
+import { fmtDate, fmtMoney } from '../i18n.js';
 import { Badge, Empty, FilterSelect, Loader, PageHead, StatCard } from '../components/Shared.jsx';
 import MaintenanceForm from '../forms/MaintenanceForm.jsx';
 
@@ -69,14 +69,14 @@ export default function Maintenance() {
         action={me.is_admin ? <button className="btn primary" onClick={openAdd}>+ {t('addMaintenance')}</button> : null}
       />
       <div className="stats-grid grid">
-        <StatCard label={t('maintenanceCost')} value={`${fmtNum(total, language, 2)} ${t('sar')}`} />
+        <StatCard label={t('maintenanceCost')} value={`${fmtMoney(total, 2)} ${t('sar')}`} />
         <StatCard label={t('repairs')} value={repairs} />
         <StatCard label={t('upgrades')} value={upgrades} />
-        <StatCard label={t('totalConsumed')} value={`${fmtNum(consumables, language, 2)} ${t('sar')}`} />
+        <StatCard label={t('totalConsumed')} value={`${fmtMoney(consumables, 2)} ${t('sar')}`} />
         {users.map((u) => (
-          <StatCard key={u.id} label={`${t('totalPaid')} · ${u.display_name}`} value={`${fmtNum(paid(u.display_name), language, 2)} ${t('sar')}`} />
+          <StatCard key={u.id} label={`${t('totalPaid')} · ${u.display_name}`} value={`${fmtMoney(paid(u.display_name), 2)} ${t('sar')}`} />
         ))}
-        <StatCard label={t('mostExpensive')} value={expensive ? `${expensive.title} · ${fmtNum(expensive.total_cost, language, 2)} ${t('sar')}` : '—'} />
+        <StatCard label={t('mostExpensive')} value={expensive ? `${expensive.title} · ${fmtMoney(expensive.total_cost, 2)} ${t('sar')}` : '—'} />
       </div>
       <div className="toolbar" style={{ marginTop: 20 }}>
         <div className="search-box">
@@ -106,8 +106,8 @@ export default function Maintenance() {
                   <td><strong>{i.title}</strong><br /><small className="muted">{i.description || ''}</small></td>
                   <td><Badge value={i.type} /></td>
                   <td>{fmtDate(i.maintenance_date, language)}</td>
-                  <td>{fmtNum(i.total_cost, language, 2)} {t('sar')}</td>
-                  <td>{i.payments.map((p) => <span key={p.user_id}>{p.user_name}: {fmtNum(p.amount, language, 2)}<br /></span>)}</td>
+                  <td>{fmtMoney(i.total_cost, 2)} {t('sar')}</td>
+                  <td>{i.payments.map((p) => <span key={p.user_id}>{p.user_name}: {fmtMoney(p.amount, 2)}<br /></span>)}</td>
                   <td>{i.store_name || '—'}</td>
                   <td>
                     <div className="row-actions">

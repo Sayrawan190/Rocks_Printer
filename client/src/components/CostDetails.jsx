@@ -1,9 +1,8 @@
 import { useApp } from '../AppContext.jsx';
-import { fmtNum } from '../i18n.js';
+import { fmtMoney, fmtNum } from '../i18n.js';
 
 function Amount({ value, currency }) {
-  const { language } = useApp();
-  return <strong>{value === null || value === undefined ? '—' : `${fmtNum(value, language, 2)} ${currency}`}</strong>;
+  return <strong>{value === null || value === undefined ? '—' : `${fmtMoney(value, 2)} ${currency}`}</strong>;
 }
 
 export default function CostDetails({ cost, result }) {
