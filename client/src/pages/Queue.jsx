@@ -107,6 +107,9 @@ export default function Queue() {
                         <div>
                           <strong>{i.product_name}</strong>
                           {i.model_link && <><br /><a className="link" href={i.model_link} target="_blank" rel="noreferrer">{t('view')}</a></>}
+                          {i.model_file_name && <><br />{me.is_admin
+                            ? <a className="link" href={`/api/queue/${i.id}/model-file`}>{t('downloadModel')}</a>
+                            : <small className="file-attached">{t('attachedModel')}: {i.model_file_name}</small>}</>}
                         </div>
                       </div>
                     </td>

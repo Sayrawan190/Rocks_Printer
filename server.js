@@ -1,7 +1,11 @@
 require('dotenv').config();
 
 const path = require('path');
+const fs = require('fs');
+const fsp = require('fs/promises');
+const crypto = require('crypto');
 const express = require('express');
+const multer = require('multer');
 const session = require('express-session');
 const helmet = require('helmet');
 const bcrypt = require('bcryptjs');
@@ -34,10 +38,103 @@ app.set('trust proxy', 1);
 
 const PORT = Number(process.env.PORT) || 3000;
 const PUBLIC_DIR = path.join(__dirname, 'public');
+const UPLOAD_DIR = path.resolve(process.env.UPLOAD_DIR || path.join(__dirname, 'data', 'uploads'));
+const UPLOAD_MAX_BYTES = Number(process.env.UPLOAD_MAX_BYTES) || 100 * 1024 * 1024;
+const UPLOAD_QUOTA_BYTES = Number(process.env.UPLOAD_QUOTA_BYTES) || 10 * 1024 * 1024 * 1024;
 const asyncRoute = (fn) => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
 
 const PASSWORD_RESET_MIGRATION = '2026-09-02-reset-default-passwords';
 const PRINT_COST_MIGRATION = '2026-09-10-print-costs';
+const MODEL_UPLOAD_MIGRATION = '2026-09-25-model-uploads';
+
+fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+
+function uploadError(message) {
+  const error = new Error(message);
+  error.status = 400;
+  error.expose = true;
+  return error;
+}
+
+function extensionOf(filename = '') {
+  return path.extname(filename).toLowerCase();
+}
+
+function storedUploadPath(storageName) {
+  const directory = path.resolve(UPLOAD_DIR);
+  const resolved = path.resolve(directory, storageName || '');
+  if (path.dirname(resolved) !== directory || path.basename(storageName || '') !== storageName) {
+    throw new Error('Invalid model file path');
+  }
+  return resolved;
+}
+
+async function deleteStoredUpload(storageName) {
+  if (!storageName) return;
+  try {
+    await fsp.unlink(storedUploadPath(storageName));
+  } catch (error) {
+    if (error.code !== 'ENOENT') throw error;
+  }
+}
+
+async function discardRequestFile(file) {
+  if (file?.filename) await deleteStoredUpload(file.filename);
+}
+
+async function uploadUsageBytes() {
+  const entries = await fsp.readdir(UPLOAD_DIR, { withFileTypes: true });
+  const sizes = await Promise.all(entries.filter((entry) => entry.isFile()).map(async (entry) => {
+    const stat = await fsp.stat(path.join(UPLOAD_DIR, entry.name));
+    return stat.size;
+  }));
+  return sizes.reduce((total, size) => total + size, 0);
+}
+
+async function clearModelFileMetadata(queueId) {
+  await db.query(`UPDATE queue_items
+    SET model_file_name=NULL, model_file_storage_name=NULL, model_file_size=NULL, model_file_uploaded_at=NULL, updated_at=NOW()
+    WHERE id=$1`, [queueId]);
+}
+
+async function makeSpaceForUpload(additionalBytes = 0) {
+  let usedBytes = await uploadUsageBytes();
+  if (usedBytes + additionalBytes <= UPLOAD_QUOTA_BYTES) return true;
+
+  const { rows: candidates } = await db.query(`SELECT id, model_file_storage_name
+    FROM queue_items
+    WHERE model_file_storage_name IS NOT NULL AND status IN ('Done','Failed','Canceled')
+    ORDER BY updated_at ASC, id ASC`);
+
+  for (const candidate of candidates) {
+    const filePath = storedUploadPath(candidate.model_file_storage_name);
+    let deletedBytes = 0;
+    try {
+      deletedBytes = (await fsp.stat(filePath)).size;
+    } catch (error) {
+      if (error.code !== 'ENOENT') throw error;
+    }
+    await deleteStoredUpload(candidate.model_file_storage_name);
+    await clearModelFileMetadata(candidate.id);
+    usedBytes = Math.max(0, usedBytes - deletedBytes);
+    if (usedBytes + additionalBytes <= UPLOAD_QUOTA_BYTES) return true;
+  }
+  return false;
+}
+
+const upload = multer({
+  storage: multer.diskStorage({
+    destination: (_req, _file, callback) => callback(null, UPLOAD_DIR),
+    filename: (_req, file, callback) => callback(null, `${crypto.randomUUID()}${extensionOf(file.originalname)}`)
+  }),
+  limits: { fileSize: UPLOAD_MAX_BYTES, files: 1 },
+  fileFilter: (_req, file, callback) => {
+    if (!['.stl', '.3mf'].includes(extensionOf(file.originalname))) {
+      return callback(uploadError('Only .stl and .3mf model files are allowed'));
+    }
+    callback(null, true);
+  }
+});
 
 async function runMigrations() {
   await db.query(`CREATE TABLE IF NOT EXISTS app_migrations (
@@ -64,6 +161,17 @@ async function runMigrations() {
       await client.query(`INSERT INTO app_settings(key,value) VALUES($1,$2::jsonb)
         ON CONFLICT(key) DO NOTHING`, ['printer_cost_settings', JSON.stringify(DEFAULT_PRINTER_COST_SETTINGS)]);
       await client.query('INSERT INTO app_migrations (name) VALUES ($1)', [PRINT_COST_MIGRATION]);
+    }
+    const uploadMigration = await client.query('SELECT 1 FROM app_migrations WHERE name=$1', [MODEL_UPLOAD_MIGRATION]);
+    if (!uploadMigration.rowCount) {
+      await client.query(`ALTER TABLE queue_items
+        ADD COLUMN IF NOT EXISTS model_file_name VARCHAR(255),
+        ADD COLUMN IF NOT EXISTS model_file_storage_name VARCHAR(255),
+        ADD COLUMN IF NOT EXISTS model_file_size BIGINT,
+        ADD COLUMN IF NOT EXISTS model_file_uploaded_at TIMESTAMPTZ`);
+      await client.query(`CREATE INDEX IF NOT EXISTS idx_queue_upload_cleanup ON queue_items(updated_at ASC)
+        WHERE model_file_storage_name IS NOT NULL AND status IN ('Done', 'Failed', 'Canceled')`);
+      await client.query('INSERT INTO app_migrations (name) VALUES ($1)', [MODEL_UPLOAD_MIGRATION]);
     }
     await client.query('COMMIT');
   } catch (error) {
@@ -367,33 +475,60 @@ app.get('/api/queue', auth, asyncRoute(async (_req, res) => {
   res.json(rows);
 }));
 
-app.post('/api/queue', auth, asyncRoute(async (req, res) => {
-  const requester = await currentUser(req.session.userId);
-  let ownerId = req.session.userId;
-  if (requester.is_admin && req.body.ownerId) {
-    const targetId = Number(req.body.ownerId);
-    const target = await db.query('SELECT id FROM users WHERE id=$1', [targetId]);
-    if (!target.rows[0]) return res.status(400).json({ error: 'Invalid owner' });
-    ownerId = targetId;
+app.post('/api/queue', auth, upload.single('modelFile'), asyncRoute(async (req, res) => {
+  const uploadedFile = req.file;
+  let saved = false;
+  try {
+    const requester = await currentUser(req.session.userId);
+    let ownerId = req.session.userId;
+    if (requester.is_admin && req.body.ownerId) {
+      const targetId = Number(req.body.ownerId);
+      const target = await db.query('SELECT id FROM users WHERE id=$1', [targetId]);
+      if (!target.rows[0]) return res.status(400).json({ error: 'Invalid owner' });
+      ownerId = targetId;
+    }
+    const grams = validNumber(req.body.estimatedGrams, 0.01);
+    const duration = validNumber(req.body.estimatedDurationMinutes, 1);
+    if (!req.body.productName?.trim() || !grams || !duration || !req.body.filamentId) {
+      return res.status(400).json({ error: 'Complete all required fields' });
+    }
+
+    const modelLink = String(req.body.modelLink || '').trim();
+    if (modelLink) {
+      let parsedLink;
+      try { parsedLink = new URL(modelLink); } catch { parsedLink = null; }
+      if (!parsedLink || !['http:', 'https:'].includes(parsedLink.protocol)) {
+        return res.status(400).json({ error: 'Model link must be a valid http or https URL' });
+      }
+    }
+    if (!modelLink && !uploadedFile) {
+      return res.status(400).json({ error: 'Add a model link or attach a .stl or .3mf file' });
+    }
+
+    const filament = await db.query('SELECT * FROM filaments WHERE id=$1', [req.body.filamentId]);
+    const spool = filament.rows[0];
+    if (!spool) return res.status(404).json({ error: 'Filament not found' });
+    if (!spool.owners.map(Number).includes(ownerId)) return res.status(403).json({ error: 'This filament is not shared with the selected owner' });
+    if (Number(spool.remaining_grams) < grams) return res.status(400).json({ error: 'Estimated grams exceed remaining filament' });
+    if (uploadedFile && !await makeSpaceForUpload()) {
+      return res.status(507).json({ error: 'Model storage is full. Remove completed requests or try again later.' });
+    }
+
+    const result = await db.query(`INSERT INTO queue_items
+      (owner_id,product_name,filament_id,model_link,model_file_name,model_file_storage_name,model_file_size,model_file_uploaded_at,image_url,estimated_grams,estimated_duration_minutes,priority,notes,position)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,(SELECT COALESCE(MAX(position),0)+1 FROM queue_items)) RETURNING *`,
+      [ownerId, req.body.productName.trim(), req.body.filamentId, modelLink || null,
+       uploadedFile?.originalname || null, uploadedFile?.filename || null, uploadedFile?.size || null, uploadedFile ? new Date() : null,
+       req.body.imageUrl || null, grams, Math.round(duration), ['Low','Normal','High'].includes(req.body.priority) ? req.body.priority : 'Normal', req.body.notes || null]);
+    saved = true;
+    await db.query('INSERT INTO queue_logs(queue_id,action,actor_id) VALUES($1,$2,$3)', [result.rows[0].id, 'Added', req.session.userId]);
+    const admin = await db.query('SELECT user_id FROM admin_permissions WHERE singleton=TRUE');
+    await addNotification(db, { userId:admin.rows[0].user_id, type:'queue_added',
+      params:{ productName:req.body.productName.trim() }, entityId:result.rows[0].id, createdBy:req.session.userId });
+    res.status(201).json(result.rows[0]);
+  } finally {
+    if (!saved) await discardRequestFile(uploadedFile);
   }
-  const grams = validNumber(req.body.estimatedGrams, 0.01);
-  const duration = validNumber(req.body.estimatedDurationMinutes, 1);
-  if (!req.body.productName?.trim() || !grams || !duration || !req.body.filamentId) return res.status(400).json({ error: 'Complete all required fields' });
-  const filament = await db.query('SELECT * FROM filaments WHERE id=$1', [req.body.filamentId]);
-  const spool = filament.rows[0];
-  if (!spool) return res.status(404).json({ error: 'Filament not found' });
-  if (!spool.owners.map(Number).includes(ownerId)) return res.status(403).json({ error: 'This filament is not shared with the selected owner' });
-  if (Number(spool.remaining_grams) < grams) return res.status(400).json({ error: 'Estimated grams exceed remaining filament' });
-  const result = await db.query(`INSERT INTO queue_items
-    (owner_id,product_name,filament_id,model_link,image_url,estimated_grams,estimated_duration_minutes,priority,notes,position)
-    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,(SELECT COALESCE(MAX(position),0)+1 FROM queue_items)) RETURNING *`,
-    [ownerId, req.body.productName.trim(), req.body.filamentId, req.body.modelLink || null, req.body.imageUrl || null,
-     grams, Math.round(duration), ['Low','Normal','High'].includes(req.body.priority) ? req.body.priority : 'Normal', req.body.notes || null]);
-  await db.query('INSERT INTO queue_logs(queue_id,action,actor_id) VALUES($1,$2,$3)', [result.rows[0].id, 'Added', req.session.userId]);
-  const admin = await db.query('SELECT user_id FROM admin_permissions WHERE singleton=TRUE');
-  await addNotification(db, { userId:admin.rows[0].user_id, type:'queue_added',
-    params:{ productName:req.body.productName.trim() }, entityId:result.rows[0].id, createdBy:req.session.userId });
-  res.status(201).json(result.rows[0]);
 }));
 
 app.put('/api/queue/:id', auth, asyncRoute(async (req, res) => {
@@ -407,12 +542,40 @@ app.put('/api/queue/:id', auth, asyncRoute(async (req, res) => {
   const filamentId = Number(req.body.filamentId ?? item.filament_id);
   const filament = await db.query('SELECT * FROM filaments WHERE id=$1', [filamentId]);
   if (!filament.rows[0] || Number(filament.rows[0].remaining_grams) < grams) return res.status(400).json({ error: 'Invalid filament or insufficient grams' });
+  let modelLink = req.body.modelLink === undefined ? item.model_link : String(req.body.modelLink || '').trim();
+  if (modelLink) {
+    let parsedLink;
+    try { parsedLink = new URL(modelLink); } catch { parsedLink = null; }
+    if (!parsedLink || !['http:', 'https:'].includes(parsedLink.protocol)) {
+      return res.status(400).json({ error: 'Model link must be a valid http or https URL' });
+    }
+  }
   await db.query(`UPDATE queue_items SET product_name=$1,filament_id=$2,model_link=$3,image_url=$4,
     estimated_grams=$5,estimated_duration_minutes=$6,priority=$7,notes=$8,updated_at=NOW() WHERE id=$9`,
-    [req.body.productName?.trim() || item.product_name, filamentId, req.body.modelLink ?? item.model_link,
+    [req.body.productName?.trim() || item.product_name, filamentId, modelLink || null,
      req.body.imageUrl ?? item.image_url, grams, Math.round(duration), req.body.priority || item.priority,
      req.body.notes ?? item.notes, item.id]);
   res.json({ ok: true });
+}));
+
+app.get('/api/queue/:id/model-file', auth, adminOnly, asyncRoute(async (req, res) => {
+  const item = (await db.query(`SELECT id, model_file_name, model_file_storage_name
+    FROM queue_items WHERE id=$1`, [req.params.id])).rows[0];
+  if (!item) return res.status(404).json({ error: 'Queue item not found' });
+  if (!item.model_file_storage_name || !item.model_file_name) {
+    return res.status(404).json({ error: 'No model file is attached to this request' });
+  }
+
+  const filePath = storedUploadPath(item.model_file_storage_name);
+  try {
+    await fsp.access(filePath);
+  } catch (error) {
+    if (error.code === 'ENOENT') await clearModelFileMetadata(item.id);
+    return res.status(404).json({ error: 'The model file is no longer available' });
+  }
+  res.setHeader('Content-Type', 'application/octet-stream');
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.download(filePath, item.model_file_name);
 }));
 
 app.delete('/api/queue/:id', auth, asyncRoute(async (req, res) => {
@@ -422,6 +585,11 @@ app.delete('/api/queue/:id', auth, asyncRoute(async (req, res) => {
   if (!user.is_admin && (item.owner_id !== user.id || item.status !== 'Pending')) return res.status(403).json({ error: 'You cannot delete this request' });
   if (item.status === 'Printing') return res.status(400).json({ error: 'Finish or cancel the active print first' });
   await db.query('DELETE FROM queue_items WHERE id=$1', [item.id]);
+  try {
+    await deleteStoredUpload(item.model_file_storage_name);
+  } catch (error) {
+    console.error(`Could not delete model file for queue item ${item.id}:`, error);
+  }
   res.json({ ok: true });
 }));
 
@@ -890,7 +1058,10 @@ app.get('/{*splat}', (_req,res) => res.sendFile(path.join(PUBLIC_DIR,'index.html
 
 app.use((error, _req, res, _next) => {
   console.error(error);
-  const message = process.env.NODE_ENV === 'production' ? 'Server error' : error.message;
+  if (error instanceof multer.MulterError && error.code === 'LIMIT_FILE_SIZE') {
+    return res.status(400).json({ error: `Model file is too large. Maximum size is ${Math.floor(UPLOAD_MAX_BYTES / 1024 / 1024)} MB.` });
+  }
+  const message = process.env.NODE_ENV === 'production' && !error.expose ? 'Server error' : error.message;
   res.status(error.status || 500).json({ error:message });
 });
 

@@ -45,6 +45,10 @@ CREATE TABLE IF NOT EXISTS queue_items (
   product_name VARCHAR(160) NOT NULL,
   filament_id INTEGER REFERENCES filaments(id) ON DELETE SET NULL,
   model_link TEXT,
+  model_file_name VARCHAR(255),
+  model_file_storage_name VARCHAR(255),
+  model_file_size BIGINT,
+  model_file_uploaded_at TIMESTAMPTZ,
   image_url TEXT,
   estimated_grams NUMERIC(10,2) NOT NULL CHECK (estimated_grams > 0),
   estimated_duration_minutes INTEGER NOT NULL DEFAULT 60 CHECK (estimated_duration_minutes > 0),
@@ -179,6 +183,8 @@ CREATE TABLE IF NOT EXISTS login_history (
 );
 
 CREATE INDEX IF NOT EXISTS idx_queue_owner_status ON queue_items(owner_id, status);
+CREATE INDEX IF NOT EXISTS idx_queue_upload_cleanup ON queue_items(updated_at ASC)
+  WHERE model_file_storage_name IS NOT NULL AND status IN ('Done', 'Failed', 'Canceled');
 CREATE INDEX IF NOT EXISTS idx_history_owner_date ON print_history(owner_id, finished_at DESC);
 CREATE INDEX IF NOT EXISTS idx_notifications_user_date ON notifications(user_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_maintenance_date ON maintenance_records(maintenance_date DESC);

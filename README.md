@@ -11,6 +11,7 @@ A responsive shared 3D-printer management system for Abdullah, Basel, Saleh, and
 - Favorites, print history, search, filters, user/global statistics
 - Maintenance records with multi-user payment validation
 - Persistent in-app notifications with read/unread state
+- Model links or private STL/3MF uploads for queue requests; uploaded files are available to the Admin only
 - Dark/light mode, responsive desktop and mobile layouts
 - JSON export/import and Admin reset controls
 
@@ -84,6 +85,10 @@ Final/
 ```
 
 All application records are stored in PostgreSQL. The browser only keeps the display theme and a small language fallback.
+
+## Model-file storage
+
+When deployed with Docker Compose, model uploads are saved in the persistent `uploads-data` volume on the local server. The default quota is 10 GB and the default file limit is 100 MB. When an upload exceeds the quota, the app removes attached files from the oldest completed, failed, or canceled requests first; it never removes files for pending or active prints. Override `UPLOAD_MAX_BYTES` or `UPLOAD_QUOTA_BYTES` only if needed.
 
 ## Dokploy
 

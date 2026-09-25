@@ -12,12 +12,13 @@ export default function QueueForm({ item = null, start = false, onDone }) {
 
   async function handleSubmit(event) {
     event.preventDefault();
-    const data = Object.fromEntries(new FormData(event.target).entries());
     const id = item?.id;
     const url = start ? `/api/queue/${id}/start` : id ? `/api/queue/${id}` : '/api/queue';
     const method = start ? 'POST' : id ? 'PUT' : 'POST';
+    const formData = new FormData(event.currentTarget);
+    const body = !start && !id ? formData : JSON.stringify(Object.fromEntries(formData.entries()));
     try {
-      await api(url, { method, body: JSON.stringify(data) });
+      await api(url, { method, body });
       closeModal();
       toast(start ? 'Print started' : 'Queue saved');
       navigate(start ? 'home' : 'queue');
@@ -45,6 +46,16 @@ export default function QueueForm({ item = null, start = false, onDone }) {
         {['Low', 'Normal', 'High'].map((v) => <option key={v} value={v}>{t(v.toLowerCase())}</option>)}
       </SelectField>
       <Field label={t('modelLink')} name="modelLink" type="url" defaultValue={item?.model_link} />
+      {!item && !start && (
+        <label className="full upload-field">
+          <span>{t('uploadModel')}</span>
+          <input name="modelFile" type="file" accept=".stl,.3mf" />
+          <small>{t('modelInputHint')}</small>
+        </label>
+      )}
+      {item?.model_file_name && (
+        <p className="form-file-note full">{t('attachedModel')}: {item.model_file_name}</p>
+      )}
       <Field label={t('imageUrl')} name="imageUrl" type="url" defaultValue={item?.image_url} full />
       <TextAreaField label={t('notes')} name="notes" defaultValue={item?.notes} />
       <FormButtons onClose={closeModal} />

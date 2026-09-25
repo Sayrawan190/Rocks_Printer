@@ -18,6 +18,7 @@ RUN npm ci --omit=dev && npm cache clean --force
 COPY db.js server.js ./
 COPY services ./services
 COPY --from=client-builder /app/public ./public
+RUN mkdir -p /data/uploads && chown -R node:node /data
 
 USER node
 EXPOSE 3001

@@ -15,6 +15,11 @@ services:
       PGPASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in Dokploy}
       DATABASE_SSL: ${DATABASE_SSL:-false}
       SESSION_SECRET: ${SESSION_SECRET:?Set SESSION_SECRET in Dokploy}
+      UPLOAD_DIR: /data/uploads
+      UPLOAD_MAX_BYTES: ${UPLOAD_MAX_BYTES:-104857600}
+      UPLOAD_QUOTA_BYTES: ${UPLOAD_QUOTA_BYTES:-10737418240}
+    volumes:
+      - uploads-data:/data/uploads
     expose:
       - "3001"
     depends_on:
@@ -55,6 +60,7 @@ services:
 
 volumes:
   postgres-data:
+  uploads-data:
 
 networks:
   app-network:
